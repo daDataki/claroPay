@@ -167,7 +167,7 @@ function detectMobileOS() {
   if (isMobile) {
     // Detectar Android
     if (/android/i.test(userAgent)) {
-      const deepLinkUrl = 'cpay://Home';
+      const deepLinkUrl = "cpay://Home";
       window.location.href = deepLinkUrl;
 
       toggleDisplay("download-google-play-header", "flex");
@@ -191,28 +191,50 @@ function detectMobileOS() {
   }
 }
 
-
 const pushToDataLayer = (section, subsection, action, element) => {
+  let title = null;
+  if(action === 'impresion'){
+    title = element
+    element = null
+  }
+  // Filtrar valores null y crear un objeto limpio
+  const eventParams = {};
+  if (section !== null) eventParams.section = section;
+  if (subsection !== null) eventParams.subsection = subsection;
+  if (action !== null) eventParams.action = action;
+  if (element !== null) eventParams.element = element;
+  if (title !== null) eventParams.title = title;
+  
+
+  // Verificar si hay datos para enviar
+  if (Object.keys(eventParams).length === 0) {
+    console.warn("No se enviarán datos debido a valores null:", {
+      section,
+      subsection,
+      action,
+      element,
+      title,
+    });
+    return; // Salir de la función si no hay datos válidos
+  }
+
   // Mostrar los parámetros en la consola
-  console.log("pushToDataLayer llamada con:", {
-    section,
-    subsection,
-    action,
-    element,
+  console.log("Datos a enviar al dataLayer:", {
+    plataforma: "claro pay",
+    ...eventParams, // Desestructurar los datos filtrados
   });
+  const eventName = action === 'impresion' ? 'detail_impression' : 'user_interaction';
 
   // Enviar los datos al dataLayer
   window.dataLayer.push({
     event: "ga4.trackEvent",
-    eventName: "user_interaction",
+    eventName: eventName,
     eventParams: {
       plataforma: "claro pay",
-      section: section,
-      subsection: subsection,
-      action: action,
-      element: element,
+      ...eventParams, // Desestructurar los datos filtrados
     },
   });
+  console.log("sASAsaSASAS", eventName)
 };
 
 
@@ -220,42 +242,87 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastElement = null;
   let lastSubsection = null;
   let collapseCount = 0;
-  let processedElements = {}; // Almacena las combinaciones de elementos y subsecciones procesadas
+  let activeCollapses = new Set();
+  let processedElements = {};
+
+  // Función para manejar el evento de "mostrar" el collapse
+  const handleShowEvent = (event) => {
+    const button = event.target.previousElementSibling.querySelector("button");
+    lastElement = button.getAttribute("data-element") || "unknown";
+    lastSubsection = button.getAttribute("data-subsection") || null;
+    const collapseId = `${lastElement}-${lastSubsection}`;
+
+    if (!activeCollapses.has(collapseId)) {
+      collapseCount++;
+      activeCollapses.add(collapseId);
+    }
+
+    // Solo registrar una vez el evento desplegar
+    if (collapseCount >= 2) {
+      if (!processedElements[collapseId]) {
+        pushToDataLayer(
+          "preguntas frecuentes",
+          lastSubsection,
+          "desplegar",
+          lastElement
+        );
+        pushToDataLayer(
+          "preguntas frecuentes",
+          lastSubsection,
+          "impresion",
+          lastElement
+        );
+        processedElements[collapseId] = true;
+      }
+    } else {
+      pushToDataLayer(
+        "preguntas frecuentes",
+        lastSubsection,
+        "desplegar",
+        lastElement
+      );
+    }
+  };
+
+  // Función para manejar el evento de "ocultar" el collapse
+  const handleHideEvent = (event) => {
+    const button = event.target.previousElementSibling.querySelector("button");
+    lastElement = button.getAttribute("data-element") || "unknown";
+    lastSubsection = button.getAttribute("data-subsection") || null;
+    const collapseId = `${lastElement}-${lastSubsection}`;
+
+    if (activeCollapses.has(collapseId)) {
+      activeCollapses.delete(collapseId);
+      collapseCount--;
+    }
+
+    // Solo procesar el evento "contraer" una vez
+    if (processedElements[collapseId]) {
+      delete processedElements[collapseId];
+    }
+
+    pushToDataLayer(
+      "preguntas frecuentes",
+      lastSubsection,
+      "contraer",
+      lastElement
+    );
+
+    event.stopPropagation();  // Detener la propagación del evento
+  };
 
   document.querySelectorAll(".accordion-collapse").forEach((collapse) => {
-    collapse.addEventListener("show.bs.collapse", (event) => {
-      const button = event.target.previousElementSibling.querySelector("button");
-      lastElement = button.getAttribute("data-element") || "unknown";
-      lastSubsection = button.getAttribute("data-subsection") || null;
-      // Incrementar el contador de aperturas si el elemento y subsección no han sido procesados
-      if (!processedElements[`${lastElement}-${lastSubsection}`]) {
-        collapseCount++;
-      }
+    if (!collapse.dataset.eventsAttached) {
+      collapse.dataset.eventsAttached = true;
 
-      if (collapseCount >= 2) {
-        // Solo registrar el evento de impresión si no se ha registrado previamente el elemento y subsección
-        if (!processedElements[`${lastElement}-${lastSubsection}`]) {
-          pushToDataLayer("preguntas frecuentes", lastSubsection, "desplegar", lastElement);
-          pushToDataLayer("preguntas frecuentes", lastSubsection, "impresión", lastElement);
-          processedElements[`${lastElement}-${lastSubsection}`] = true; // Marcar como procesado
-          
-        }
-      } else {
-        pushToDataLayer("preguntas frecuentes", lastSubsection, "desplegar", lastElement);
-      }
-    });
-
-    collapse.addEventListener("hide.bs.collapse", (event) => {
-      const button = event.target.previousElementSibling.querySelector("button");
-      lastElement = button.getAttribute("data-element") || "unknown";
-      lastSubsection = button.getAttribute("data-subsection") || null;
-      pushToDataLayer("preguntas frecuentes", lastSubsection, "contraer", lastElement);
-
-      // Resetear el contador de aperturas
-      collapseCount = 0;
-    });
+      collapse.addEventListener("show.bs.collapse", handleShowEvent);
+      collapse.addEventListener("hide.bs.collapse", handleHideEvent);
+    }
   });
 });
+
+
+
 
 // Función específica para FAQ
 const trackFaqEvent = (section, element, action) => {
