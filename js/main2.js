@@ -234,7 +234,6 @@ const pushToDataLayer = (section, subsection, action, element) => {
       ...eventParams, // Desestructurar los datos filtrados
     },
   });
-  console.log("sASAsaSASAS", eventName)
 };
 
 
